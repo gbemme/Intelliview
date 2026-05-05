@@ -44,21 +44,7 @@ class SessionSummaryScreen extends StatelessWidget {
                 children: [
                   ElevatedButton(
                     onPressed: () async {
-                      try {
-                        await state.submitSession(session);
-                        await state.addSessionToHistory(session);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Session uploaded and saved to history.')),
-                          );
-                        }
-                      } catch (error) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Upload failed: ${state.errorMessage ?? error.toString()}')),
-                          );
-                        }
-                      }
+                    
                     },
                     style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(50)),
                     child: const Text('Save & Share Results'),
