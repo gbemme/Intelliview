@@ -16,6 +16,8 @@ class AppState extends ChangeNotifier {
   List<String> remoteTrackSuggestions = [];
   List<InterviewSession> history = [];
   String? submittedSessionId;
+  List<String> _answers = [];
+int _currentIndex = 0;
 
   void selectProfile(String role, String track) {
     selectedRole = role;
@@ -23,25 +25,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadTrackSuggestions() async {
-    _setLoading(true);
-    try {
-      remoteTrackSuggestions = await apiService.fetchTrackSuggestions();
-      errorMessage = null;
-    } catch (error) {
-      errorMessage = error.toString();
-    } finally {
-      _setLoading(false);
-    }
-  }
+  
 
   Future<List<String>> loadPracticePrompts() async {
     try {
-      return await apiService.fetchPracticePrompts();
+       final prompts = await apiService.fetchPracticePrompts(
+        role: selectedRole ?? 'candidate',
+        track: selectedTrack ?? 'technical',
+        count: 10,
+      );
+
+    return prompts;
     } catch (error) {
       errorMessage = error.toString();
       rethrow;
-    }
+    } 
   }
 
   Future<void> loadHistory() async {
@@ -69,18 +67,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> submitSession(InterviewSession session) async {
-    _setLoading(true);
-    try {
-      submittedSessionId = await apiService.submitSession(session);
-      errorMessage = null;
-    } catch (error) {
-      errorMessage = error.toString();
-      rethrow;
-    } finally {
-      _setLoading(false);
-    }
-  }
+
 
   void clearError() {
     errorMessage = null;
