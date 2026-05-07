@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/interview_session.dart';
+import '../../models/question_response.dart';
 import '../../routes.dart';
 import '../../services/speech_service.dart';
 import '../../state/app_state.dart';
@@ -27,25 +28,30 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
   String? _error;
   List<String> _prompts = [];
   List<String> _answers = [];
+  List<int> _questionDurations = [];
   int _currentIndex = 0;
+  DateTime? _interviewStartedAt;
+  DateTime? _questionStartedAt;
+  String _elapsedTime = '00:00';
 
   // ── Animations ─────────────────────────────────────────────────────────────
   late AnimationController _pulseController;
   late AnimationController _questionSlideController;
+  late AnimationController _timerController;
   late Animation<double> _pulseAnimation;
   late Animation<Offset> _questionSlideAnimation;
   late Animation<double> _questionFadeAnimation;
 
   // ── Palette ────────────────────────────────────────────────────────────────
-  static const Color _bg          = Color(0xFF0F0E17);
-  static const Color _surface     = Color(0xFF1A1829);
-  static const Color _card        = Color(0xFF211F35);
-  static const Color _accent      = Color(0xFF6C63FF);
-  static const Color _accentAlt   = Color(0xFFFF6584);
-  static const Color _teal        = Color(0xFF00C9A7);
+  static const Color _bg = Color(0xFF0F0E17);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _card = Color(0xFF211F35);
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _accentAlt = Color(0xFFFF6584);
+  static const Color _teal = Color(0xFF00C9A7);
   static const Color _textPrimary = Color(0xFFF4F3FF);
-  static const Color _textMuted   = Color(0xFF9896B0);
-  static const Color _border      = Color(0xFF2E2C45);
+  static const Color _textMuted = Color(0xFF9896B0);
+  static const Color _border = Color(0xFF2E2C45);
 
   @override
   void initState() {
@@ -74,6 +80,11 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
         parent: _questionSlideController, curve: Curves.easeOut);
     _questionSlideController.forward();
 
+    _timerController = AnimationController(
+      vsync: this,
+      duration: const Duration(hours: 1),
+    )..addListener(_updateElapsedTime);
+
     _initializeSpeech();
     _loadPrompts();
   }
@@ -82,8 +93,42 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
   void dispose() {
     _pulseController.dispose();
     _questionSlideController.dispose();
+    _timerController.dispose();
     _transcriptController.dispose();
     super.dispose();
+  }
+
+  void _updateElapsedTime() {
+    if (_interviewStartedAt != null) {
+      final elapsed = DateTime.now().difference(_interviewStartedAt!).inSeconds;
+      final minutes = elapsed ~/ 60;
+      final seconds = elapsed % 60;
+      final formatted =
+          '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+      if (_elapsedTime != formatted) {
+        _elapsedTime = formatted;
+        setState(() {});
+      }
+    }
+  }
+
+  void _startTimer() {
+    if (_interviewStartedAt == null) {
+      _interviewStartedAt = DateTime.now();
+      _timerController.forward();
+    }
+    _questionStartedAt = DateTime.now();
+  }
+
+  void _stopTimer() {
+    _timerController.stop();
+    if (_questionStartedAt != null) {
+      final elapsed = DateTime.now().difference(_questionStartedAt!).inSeconds;
+      if (_currentIndex < _questionDurations.length) {
+        _questionDurations[_currentIndex] = elapsed;
+      }
+      _questionStartedAt = null;
+    }
   }
 
   // ── Logic (unchanged from original) ────────────────────────────────────────
@@ -103,8 +148,10 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
           _prompts = saved.prompts;
           _answers = saved.answers;
           _currentIndex = saved.currentIndex;
+          _interviewStartedAt = saved.questionStartedAt;
           _transcriptController.text = _answers[_currentIndex];
         });
+        _startTimer();
         return;
       }
       final state = context.read<AppState>();
@@ -112,7 +159,9 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
       setState(() {
         _prompts = prompts;
         _answers = List.filled(prompts.length, '');
+        _questionDurations = List.filled(prompts.length, 0);
       });
+      _startTimer();
     } catch (e) {
       setState(() => _error = e.toString());
     }
@@ -144,24 +193,81 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
     _questionSlideController.forward();
   }
 
-  void _goNext() {
+  Future<void> _goNext() async {
+    final currentAnswer = _answers[_currentIndex].trim();
+    if (currentAnswer.isEmpty) {
+      _showSnack('Answer the current question before continuing');
+      return;
+    }
+
+    if (_isRecording) {
+      await _speechService.stopListening();
+      _pulseController
+        ..stop()
+        ..animateTo(0);
+      setState(() => _isRecording = false);
+    }
+
     if (_currentIndex < _prompts.length - 1) {
+      _stopTimer();
       _animateQuestion(() {
         _currentIndex++;
         _transcriptController.text = _answers[_currentIndex];
       });
+      _startTimer();
       _saveSession();
     }
   }
 
-  void _goPrevious() {
-    if (_currentIndex > 0) {
-      _animateQuestion(() {
-        _currentIndex--;
-        _transcriptController.text = _answers[_currentIndex];
-      });
-      _saveSession();
-    }
+  void _exitInterview() {
+    _showExitConfirmation();
+  }
+
+  void _showExitConfirmation() {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          backgroundColor: _card,
+          titleTextStyle: const TextStyle(
+            color: _textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          contentTextStyle: const TextStyle(
+            color: _textMuted,
+            fontSize: 14,
+          ),
+          title: const Text('Exit Interview?'),
+          content: const Text('Your progress will be lost if you exit now.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: _accent),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                _stopTimer();
+                _sessionRepo.clear();
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  AppRoutes.onboarding,
+                  (route) => false,
+                );
+              },
+              child: const Text(
+                'Exit',
+                style: TextStyle(color: _accentAlt),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _finishSession() {
@@ -170,21 +276,40 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
     final track = state.selectedTrack;
     if (role == null || track == null) return;
 
-    final transcript = _answers.join('\n\n');
-    if (transcript.trim().isEmpty) {
+    final currentAnswer = _answers[_currentIndex].trim();
+    if (currentAnswer.isEmpty) {
+      _showSnack('Answer the current question before finishing');
+      return;
+    }
+
+    _stopTimer();
+
+    final answers = _answers.where((a) => a.trim().isNotEmpty).toList();
+    if (answers.isEmpty) {
       _showSnack('Answer at least one question first');
       return;
     }
+
+    final transcript = _answers.join('\n\n');
+    final questionResponses = List.generate(_prompts.length, (index) {
+      return QuestionResponse(
+        prompt: _prompts[index],
+        answer: _answers[index],
+        durationSeconds:
+            index < _questionDurations.length ? _questionDurations[index] : 0,
+      );
+    });
 
     final session = InterviewSession(
       id: DateTime.now().toString(),
       role: role,
       track: track,
       transcript: transcript,
-      clarity: _scoreClarity(transcript),
-      pace: _scorePace(transcript),
-      accuracy: _scoreAccuracy(transcript),
+      clarity: 0,
+      pace: 0,
+      accuracy: 0,
       createdAt: DateTime.now(),
+      questionResponses: questionResponses,
     );
 
     Navigator.pushNamed(context, AppRoutes.summary, arguments: session);
@@ -218,9 +343,11 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
     final session = ActiveSession(
       role: state.selectedRole!,
       track: state.selectedTrack!,
+      level: state.selectedLevel!,
       prompts: _prompts,
       answers: _answers,
       currentIndex: _currentIndex,
+      questionStartedAt: _interviewStartedAt,
     );
     await _sessionRepo.save(session);
   }
@@ -229,7 +356,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final role  = state.selectedRole ?? '';
+    final role = state.selectedRole ?? '';
     final track = state.selectedTrack ?? '';
 
     return Scaffold(
@@ -271,7 +398,12 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
                     : Column(
                         children: [
                           // ── Top bar ──────────────────────────────────
-                          _TopBar(role: role, track: track),
+                          _TopBar(
+                            role: role,
+                            track: track,
+                            elapsedTime: _elapsedTime,
+                            onExit: _exitInterview,
+                          ),
 
                           // ── Progress ─────────────────────────────────
                           _ProgressSection(
@@ -284,8 +416,8 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
                           Expanded(
                             child: SingleChildScrollView(
                               physics: const BouncingScrollPhysics(),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
                               child: Column(
                                 children: [
                                   const SizedBox(height: 8),
@@ -319,7 +451,9 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
                             isReady: _isReady,
                             isRecording: _isRecording,
                             pulseAnimation: _pulseAnimation,
-                            onPrevious: _goPrevious,
+                            canAdvance:
+                                _answers[_currentIndex].trim().isNotEmpty &&
+                                    !_isRecording,
                             onNext: _goNext,
                             onFinish: _finishSession,
                             onToggleRecording: _toggleRecording,
@@ -340,27 +474,31 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
 class _TopBar extends StatelessWidget {
   final String role;
   final String track;
-  const _TopBar({required this.role, required this.track});
+  final String elapsedTime;
+  final VoidCallback onExit;
+  const _TopBar({
+    required this.role,
+    required this.track,
+    required this.elapsedTime,
+    required this.onExit,
+  });
 
-  static const Color _accent    = Color(0xFF6C63FF);
-  static const Color _teal      = Color(0xFF00C9A7);
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _teal = Color(0xFF00C9A7);
   static const Color _textPrimary = Color(0xFFF4F3FF);
-  static const Color _textMuted   = Color(0xFF9896B0);
-  static const Color _surface     = Color(0xFF1A1829);
-  static const Color _border      = Color(0xFF2E2C45);
+  static const Color _textMuted = Color(0xFF9896B0);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _border = Color(0xFF2E2C45);
 
   @override
   Widget build(BuildContext context) {
-    final isTech = track.toLowerCase() == 'technical';
-    final trackColor = isTech ? _accent : _teal;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
         children: [
-          // Back button
+          // Exit button
           GestureDetector(
-            onTap: () => Navigator.pop(context),
+            onTap: onExit,
             child: Container(
               width: 38,
               height: 38,
@@ -369,8 +507,8 @@ class _TopBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: _border),
               ),
-              child: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: _textMuted, size: 16),
+              child:
+                  const Icon(Icons.close_rounded, color: _textMuted, size: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -396,38 +534,21 @@ class _TopBar extends StatelessWidget {
               ],
             ),
           ),
-          // Track badge
+          // Timer badge
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: trackColor.withOpacity(0.12),
+              color: _accent.withOpacity(0.12),
               borderRadius: BorderRadius.circular(20),
-              border:
-                  Border.all(color: trackColor.withOpacity(0.4), width: 1),
+              border: Border.all(color: _accent.withOpacity(0.4), width: 1),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: trackColor,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  track,
-                  style: TextStyle(
-                    color: trackColor,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ],
+            child: Text(
+              elapsedTime,
+              style: const TextStyle(
+                color: _accent,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -441,15 +562,13 @@ class _ProgressSection extends StatelessWidget {
   final int total;
   final List<String> answers;
   const _ProgressSection(
-      {required this.current,
-      required this.total,
-      required this.answers});
+      {required this.current, required this.total, required this.answers});
 
-  static const Color _accent    = Color(0xFF6C63FF);
-  static const Color _surface   = Color(0xFF1A1829);
-  static const Color _border    = Color(0xFF2E2C45);
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _border = Color(0xFF2E2C45);
   static const Color _textPrimary = Color(0xFFF4F3FF);
-  static const Color _textMuted   = Color(0xFF9896B0);
+  static const Color _textMuted = Color(0xFF9896B0);
 
   @override
   Widget build(BuildContext context) {
@@ -516,12 +635,12 @@ class _QuestionCard extends StatelessWidget {
   final int index;
   const _QuestionCard({required this.text, required this.index});
 
-  static const Color _surface     = Color(0xFF1A1829);
-  static const Color _card        = Color(0xFF211F35);
-  static const Color _accent      = Color(0xFF6C63FF);
-  static const Color _border      = Color(0xFF2E2C45);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _card = Color(0xFF211F35);
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _border = Color(0xFF2E2C45);
   static const Color _textPrimary = Color(0xFFF4F3FF);
-  static const Color _textMuted   = Color(0xFF9896B0);
+  static const Color _textMuted = Color(0xFF9896B0);
 
   @override
   Widget build(BuildContext context) {
@@ -540,8 +659,8 @@ class _QuestionCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: _accent.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
@@ -560,8 +679,7 @@ class _QuestionCard extends StatelessWidget {
               const Icon(Icons.help_outline_rounded,
                   color: _textMuted, size: 14),
               const Spacer(),
-              const Icon(Icons.volume_up_outlined,
-                  color: _textMuted, size: 16),
+              const Icon(Icons.volume_up_outlined, color: _textMuted, size: 16),
             ],
           ),
           const SizedBox(height: 14),
@@ -588,13 +706,13 @@ class _AnswerField extends StatelessWidget {
     required this.isRecording,
   });
 
-  static const Color _surface   = Color(0xFF1A1829);
-  static const Color _card      = Color(0xFF211F35);
-  static const Color _accent    = Color(0xFF6C63FF);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _card = Color(0xFF211F35);
+  static const Color _accent = Color(0xFF6C63FF);
   static const Color _accentAlt = Color(0xFFFF6584);
-  static const Color _border    = Color(0xFF2E2C45);
+  static const Color _border = Color(0xFF2E2C45);
   static const Color _textPrimary = Color(0xFFF4F3FF);
-  static const Color _textMuted   = Color(0xFF9896B0);
+  static const Color _textMuted = Color(0xFF9896B0);
 
   @override
   Widget build(BuildContext context) {
@@ -604,9 +722,7 @@ class _AnswerField extends StatelessWidget {
         color: _surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isRecording
-              ? _accentAlt.withOpacity(0.6)
-              : _border,
+          color: isRecording ? _accentAlt.withOpacity(0.6) : _border,
           width: isRecording ? 1.5 : 1,
         ),
         boxShadow: isRecording
@@ -624,8 +740,7 @@ class _AnswerField extends StatelessWidget {
         children: [
           // Header row
           Padding(
-            padding:
-                const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
                 Icon(
@@ -665,8 +780,7 @@ class _AnswerField extends StatelessWidget {
               hintText: isRecording
                   ? 'Listening — speak your answer...'
                   : 'Tap the mic below to record your answer',
-              hintStyle: const TextStyle(
-                  color: _textMuted, fontSize: 13),
+              hintStyle: const TextStyle(color: _textMuted, fontSize: 13),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             ),
@@ -683,7 +797,7 @@ class _BottomBar extends StatelessWidget {
   final bool isReady;
   final bool isRecording;
   final Animation<double> pulseAnimation;
-  final VoidCallback onPrevious;
+  final bool canAdvance;
   final VoidCallback onNext;
   final VoidCallback onFinish;
   final VoidCallback onToggleRecording;
@@ -694,20 +808,20 @@ class _BottomBar extends StatelessWidget {
     required this.isReady,
     required this.isRecording,
     required this.pulseAnimation,
-    required this.onPrevious,
+    required this.canAdvance,
     required this.onNext,
     required this.onFinish,
     required this.onToggleRecording,
   });
 
-  static const Color _bg         = Color(0xFF0F0E17);
-  static const Color _surface    = Color(0xFF1A1829);
-  static const Color _accent     = Color(0xFF6C63FF);
-  static const Color _accentAlt  = Color(0xFFFF6584);
-  static const Color _teal       = Color(0xFF00C9A7);
-  static const Color _border     = Color(0xFF2E2C45);
-  static const Color _textPrimary= Color(0xFFF4F3FF);
-  static const Color _textMuted  = Color(0xFF9896B0);
+  static const Color _bg = Color(0xFF0F0E17);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _accentAlt = Color(0xFFFF6584);
+  static const Color _teal = Color(0xFF00C9A7);
+  static const Color _border = Color(0xFF2E2C45);
+  static const Color _textPrimary = Color(0xFFF4F3FF);
+  static const Color _textMuted = Color(0xFF9896B0);
 
   bool get _isLast => currentIndex == total - 1;
 
@@ -721,17 +835,21 @@ class _BottomBar extends StatelessWidget {
         border: Border(top: BorderSide(color: _border, width: 1)),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Previous
-          _NavButton(
-            icon: Icons.arrow_back_ios_new_rounded,
-            enabled: currentIndex > 0,
-            onTap: onPrevious,
+          SizedBox(
+            width: 80,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _NavButton(
+                icon: Icons.arrow_back_ios_new_rounded,
+                enabled: false,
+                onTap: () {},
+              ),
+            ),
           ),
-          const SizedBox(width: 12),
-
-          // Mic button (centre)
-          Expanded(
+          SizedBox(
+            width: 80,
             child: Center(
               child: AnimatedBuilder(
                 animation: pulseAnimation,
@@ -780,18 +898,23 @@ class _BottomBar extends StatelessWidget {
               ),
             ),
           ),
-
-          const SizedBox(width: 12),
-
-          // Next / Finish
-          _isLast
-              ? _FinishButton(onTap: onFinish)
-              : _NavButton(
-                  icon: Icons.arrow_forward_ios_rounded,
-                  enabled: true,
-                  onTap: onNext,
-                  filled: true,
-                ),
+          SizedBox(
+            width: 80,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _isLast
+                  ? _FinishButton(
+                      onTap: onFinish,
+                      enabled: canAdvance && !isRecording,
+                    )
+                  : _NavButton(
+                      icon: Icons.arrow_forward_ios_rounded,
+                      enabled: canAdvance,
+                      onTap: onNext,
+                      filled: true,
+                    ),
+            ),
+          ),
         ],
       ),
     );
@@ -810,10 +933,10 @@ class _NavButton extends StatelessWidget {
     this.filled = false,
   });
 
-  static const Color _surface  = Color(0xFF1A1829);
-  static const Color _accent   = Color(0xFF6C63FF);
-  static const Color _border   = Color(0xFF2E2C45);
-  static const Color _textMuted= Color(0xFF9896B0);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _border = Color(0xFF2E2C45);
+  static const Color _textMuted = Color(0xFF9896B0);
 
   @override
   Widget build(BuildContext context) {
@@ -832,8 +955,7 @@ class _NavButton extends StatelessWidget {
               color: filled ? _accent.withOpacity(0.5) : _border,
             ),
           ),
-          child: Icon(icon,
-              color: filled ? _accent : _textMuted, size: 18),
+          child: Icon(icon, color: filled ? _accent : _textMuted, size: 18),
         ),
       ),
     );
@@ -842,44 +964,39 @@ class _NavButton extends StatelessWidget {
 
 class _FinishButton extends StatelessWidget {
   final VoidCallback onTap;
-  const _FinishButton({required this.onTap});
+  final bool enabled;
+  const _FinishButton({required this.onTap, required this.enabled});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF00C9A7), Color(0xFF00A688)],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
+      onTap: enabled ? onTap : null,
+      child: AnimatedOpacity(
+        opacity: enabled ? 1.0 : 0.35,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF00C9A7), Color(0xFF00A688)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: enabled
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF00C9A7).withOpacity(0.35),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
           ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF00C9A7).withOpacity(0.35),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Finish',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            SizedBox(width: 6),
-            Icon(Icons.check_rounded, color: Colors.white, size: 17),
-          ],
+          child: const Center(
+            child: Icon(Icons.check_rounded, color: Colors.white, size: 20),
+          ),
         ),
       ),
     );

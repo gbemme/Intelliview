@@ -1,3 +1,5 @@
+import 'question_response.dart';
+
 class InterviewSession {
   final String id;
   final String role;
@@ -7,6 +9,7 @@ class InterviewSession {
   final int pace;
   final int accuracy;
   final DateTime createdAt;
+  final List<QuestionResponse>? questionResponses;
 
   InterviewSession({
     required this.id,
@@ -17,6 +20,7 @@ class InterviewSession {
     required this.pace,
     required this.accuracy,
     required this.createdAt,
+    this.questionResponses,
   });
 
   double get averageScore => (clarity + pace + accuracy) / 3.0;
@@ -31,6 +35,9 @@ class InterviewSession {
       pace: json['pace'] as int,
       accuracy: json['accuracy'] as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      questionResponses: (json['questionResponses'] as List<dynamic>?)
+          ?.map((item) => QuestionResponse.fromJson(item as Map<String, dynamic>))
+          .toList(),
     );
   }
 
@@ -44,6 +51,7 @@ class InterviewSession {
       'pace': pace,
       'accuracy': accuracy,
       'createdAt': createdAt.toIso8601String(),
+      'questionResponses': questionResponses?.map((item) => item.toJson()).toList(),
     };
   }
 }

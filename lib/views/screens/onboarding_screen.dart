@@ -15,6 +15,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   final _formKey = GlobalKey<FormState>();
   String? _selectedRole;
   String? _selectedTrack;
+  String? _selectedLevel;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -22,21 +23,21 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   late Animation<Offset> _slideAnimation;
 
   final List<Map<String, dynamic>> _roles = [
-    {'label': 'Software Engineer',    'icon': Icons.code_rounded},
-    {'label': 'Data Analyst',         'icon': Icons.bar_chart_rounded},
-    {'label': 'Product Manager',      'icon': Icons.lightbulb_outline_rounded},
-    {'label': 'UX Designer',          'icon': Icons.brush_rounded},
-    {'label': 'Marketing Manager',    'icon': Icons.campaign_rounded},
-    {'label': 'Finance Analyst',      'icon': Icons.account_balance_rounded},
-    {'label': 'DevOps Engineer',      'icon': Icons.cloud_rounded},
-    {'label': 'Data Scientist',       'icon': Icons.science_rounded},
-    {'label': 'Sales Manager',        'icon': Icons.handshake_rounded},
-    {'label': 'HR Manager',           'icon': Icons.people_rounded},
-    {'label': 'Business Analyst',     'icon': Icons.analytics_rounded},
-    {'label': 'Cybersecurity Analyst','icon': Icons.security_rounded},
-    {'label': 'Content Strategist',   'icon': Icons.edit_note_rounded},
-    {'label': 'Operations Manager',   'icon': Icons.settings_rounded},
-    {'label': 'Legal Counsel',        'icon': Icons.gavel_rounded},
+    {'label': 'Software Engineer', 'icon': Icons.code_rounded},
+    {'label': 'Data Analyst', 'icon': Icons.bar_chart_rounded},
+    {'label': 'Product Manager', 'icon': Icons.lightbulb_outline_rounded},
+    {'label': 'UX Designer', 'icon': Icons.brush_rounded},
+    {'label': 'Marketing Manager', 'icon': Icons.campaign_rounded},
+    {'label': 'Finance Analyst', 'icon': Icons.account_balance_rounded},
+    {'label': 'DevOps Engineer', 'icon': Icons.cloud_rounded},
+    {'label': 'Data Scientist', 'icon': Icons.science_rounded},
+    {'label': 'Sales Manager', 'icon': Icons.handshake_rounded},
+    {'label': 'HR Manager', 'icon': Icons.people_rounded},
+    {'label': 'Business Analyst', 'icon': Icons.analytics_rounded},
+    {'label': 'Cybersecurity Analyst', 'icon': Icons.security_rounded},
+    {'label': 'Content Strategist', 'icon': Icons.edit_note_rounded},
+    {'label': 'Operations Manager', 'icon': Icons.settings_rounded},
+    {'label': 'Legal Counsel', 'icon': Icons.gavel_rounded},
   ];
 
   final List<Map<String, dynamic>> _tracks = [
@@ -51,6 +52,21 @@ class _OnboardingScreenState extends State<OnboardingScreen>
       'icon': Icons.people_alt_rounded,
       'desc': 'Teamwork & soft skills',
       'color': const Color(0xFF00C9A7),
+    },
+  ];
+
+  final List<Map<String, dynamic>> _levels = [
+    {
+      'label': 'Entry Level',
+      'desc': 'New to the field',
+    },
+    {
+      'label': 'Intermediate',
+      'desc': '2-5 years experience',
+    },
+    {
+      'label': 'Experienced',
+      'desc': '5+ years experience',
     },
   ];
 
@@ -90,7 +106,6 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     _slideController.forward();
 
     final state = context.read<AppState>();
-  
   }
 
   @override
@@ -103,7 +118,9 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   void _submit() {
     if (_formKey.currentState?.validate() ?? false) {
       _formKey.currentState?.save();
-      context.read<AppState>().selectProfile(_selectedRole!, _selectedTrack!);
+      context
+          .read<AppState>()
+          .selectProfile(_selectedRole!, _selectedTrack!, _selectedLevel!);
       Navigator.pushNamed(context, AppRoutes.practice);
     }
   }
@@ -208,7 +225,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                                 .map((t) => Expanded(
                                                       child: Padding(
                                                         padding: EdgeInsets.only(
-                                                            right: t == _tracks.last
+                                                            right: t ==
+                                                                    _tracks.last
                                                                 ? 0
                                                                 : 12),
                                                         child: _TrackCard(
@@ -243,6 +261,54 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(height: 32),
+                                    // ── Section: Level ────────────
+                                    _SectionLabel(
+                                        label: 'Your experience level'),
+                                    const SizedBox(height: 14),
+                                    FormField<String>(
+                                      validator: (v) => v == null
+                                          ? 'Please select a level'
+                                          : null,
+                                      builder: (field) => Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Column(
+                                            children: _levels
+                                                .map((lvl) => Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              bottom: 12),
+                                                      child: _LevelCard(
+                                                        label: lvl['label'],
+                                                        desc: lvl['desc'],
+                                                        selected:
+                                                            _selectedLevel ==
+                                                                lvl['label'],
+                                                        onTap: () {
+                                                          setState(() =>
+                                                              _selectedLevel =
+                                                                  lvl['label']);
+                                                          field.didChange(
+                                                              lvl['label']);
+                                                        },
+                                                      ),
+                                                    ))
+                                                .toList(),
+                                          ),
+                                          if (field.hasError)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                  top: 8, left: 4),
+                                              child: Text(field.errorText!,
+                                                  style: const TextStyle(
+                                                      color: _accentAlt,
+                                                      fontSize: 12)),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
@@ -251,16 +317,14 @@ class _OnboardingScreenState extends State<OnboardingScreen>
                               if (state.isLoading)
                                 const Center(
                                   child: Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(vertical: 12),
+                                    padding: EdgeInsets.symmetric(vertical: 12),
                                     child: CircularProgressIndicator(
                                       color: _accent,
                                       strokeWidth: 2,
                                     ),
                                   ),
-                                )
-                             ,
-                     
+                                ),
+
                               const SizedBox(height: 32),
                               // ── CTA ────────────────────────────
                               _StartButton(onPressed: _submit),
@@ -392,15 +456,17 @@ class _IllustrationStrip extends StatelessWidget {
                   margin: EdgeInsets.only(
                     right: item == items.last ? 0 : 10,
                   ),
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 16, horizontal: 8),
+                  height: 100,
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A1829),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: const Color(0xFF2E2C45), width: 1),
+                    border:
+                        Border.all(color: const Color(0xFF2E2C45), width: 1),
                   ),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(item['icon'] as IconData,
                           color: const Color(0xFF6C63FF), size: 26),
@@ -478,8 +544,8 @@ class _RoleDropdown extends StatelessWidget {
         builder: (ctx, setSheetState) {
           final query = searchCtrl.text.toLowerCase();
           final filtered = roles
-              .where((r) =>
-                  (r['label'] as String).toLowerCase().contains(query))
+              .where(
+                  (r) => (r['label'] as String).toLowerCase().contains(query))
               .toList();
 
           return Container(
@@ -524,8 +590,8 @@ class _RoleDropdown extends StatelessWidget {
                   child: TextField(
                     controller: searchCtrl,
                     onChanged: (_) => setSheetState(() {}),
-                    style: const TextStyle(
-                        color: Color(0xFFF4F3FF), fontSize: 14),
+                    style:
+                        const TextStyle(color: Color(0xFFF4F3FF), fontSize: 14),
                     cursorColor: const Color(0xFF6C63FF),
                     decoration: InputDecoration(
                       hintText: 'Search roles...',
@@ -549,13 +615,11 @@ class _RoleDropdown extends StatelessWidget {
                           vertical: 12, horizontal: 16),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                            color: Color(0xFF2E2C45)),
+                        borderSide: const BorderSide(color: Color(0xFF2E2C45)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                            color: Color(0xFF2E2C45)),
+                        borderSide: const BorderSide(color: Color(0xFF2E2C45)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -615,8 +679,7 @@ class _RoleDropdown extends StatelessWidget {
                                             ? const Color(0xFF6C63FF)
                                                 .withOpacity(0.2)
                                             : const Color(0xFF211F35),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
+                                        borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Icon(
                                         role['icon'] as IconData,
@@ -735,9 +798,8 @@ class _RoleDropdown extends StatelessWidget {
                           ? const Color(0xFFF4F3FF)
                           : const Color(0xFF9896B0),
                       fontSize: 14,
-                      fontWeight: hasSelection
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+                      fontWeight:
+                          hasSelection ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -787,6 +849,7 @@ class _TrackCard extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
         padding: const EdgeInsets.all(16),
+        constraints: const BoxConstraints(minHeight: 140),
         decoration: BoxDecoration(
           color: selected ? color.withOpacity(0.12) : const Color(0xFF1A1829),
           borderRadius: BorderRadius.circular(18),
@@ -797,6 +860,7 @@ class _TrackCard extends StatelessWidget {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               width: 40,
@@ -826,6 +890,84 @@ class _TrackCard extends StatelessWidget {
                 fontSize: 11,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LevelCard extends StatelessWidget {
+  final String label;
+  final String desc;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LevelCard({
+    required this.label,
+    required this.desc,
+    required this.selected,
+    required this.onTap,
+  });
+
+  static const Color _accent = Color(0xFF6C63FF);
+  static const Color _surface = Color(0xFF1A1829);
+  static const Color _card = Color(0xFF211F35);
+  static const Color _border = Color(0xFF2E2C45);
+  static const Color _textPrimary = Color(0xFFF4F3FF);
+  static const Color _textSecondary = Color(0xFF9896B0);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: selected ? _accent.withOpacity(0.12) : _card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? _accent : _border,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: selected ? _textPrimary : _textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  desc,
+                  style: const TextStyle(
+                    color: _textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            if (selected)
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: _accent,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: Colors.white, size: 14),
+              ),
           ],
         ),
       ),
@@ -889,8 +1031,7 @@ class _ErrorBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFF6584).withOpacity(0.08),
         borderRadius: BorderRadius.circular(14),
-        border:
-            Border.all(color: const Color(0xFFFF6584).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFFFF6584).withOpacity(0.3)),
       ),
       child: Row(
         children: [
@@ -899,21 +1040,18 @@ class _ErrorBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(message,
-                style: const TextStyle(
-                    color: Color(0xFFFF6584), fontSize: 13)),
+                style: const TextStyle(color: Color(0xFFFF6584), fontSize: 13)),
           ),
           TextButton(
             onPressed: onRetry,
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFFF6584),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: const Text('Retry',
-                style:
-                    TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -989,8 +1127,7 @@ class _StartButtonState extends State<_StartButton>
                 ),
               ),
               SizedBox(width: 8),
-              Icon(Icons.arrow_forward_rounded,
-                  color: Colors.white, size: 18),
+              Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 18),
             ],
           ),
         ),
