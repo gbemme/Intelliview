@@ -43,7 +43,7 @@ class RadarChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paintGrid = Paint()
-      ..color = Colors.grey.withAlpha((0.35 * 255).round())
+      ..color = const Color(0xFF2E2C45).withAlpha((0.5 * 255).round())
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
@@ -71,7 +71,7 @@ class RadarChartPainter extends CustomPainter {
       final textPainter = TextPainter(
         text: TextSpan(
           text: labels[index],
-          style: const TextStyle(color: Colors.black87, fontSize: 12),
+          style: const TextStyle(color: Color(0xFF9896B0), fontSize: 12, fontWeight: FontWeight.w500),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -91,10 +91,10 @@ class RadarChartPainter extends CustomPainter {
     }).toList();
 
     final chartPaint = Paint()
-      ..color = Colors.blueAccent.withAlpha((0.42 * 255).round())
+      ..color = const Color(0xFF6C63FF).withAlpha((0.35 * 255).round())
       ..style = PaintingStyle.fill;
     final strokePaint = Paint()
-      ..color = Colors.blueAccent
+      ..color = const Color(0xFF6C63FF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
 

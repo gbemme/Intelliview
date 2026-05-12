@@ -11,35 +11,36 @@ class AppState extends ChangeNotifier {
 
   String? selectedRole;
   String? selectedTrack;
+  String? selectedLevel;
   String? errorMessage;
   bool isLoading = false;
   List<String> remoteTrackSuggestions = [];
   List<InterviewSession> history = [];
   String? submittedSessionId;
   List<String> _answers = [];
-int _currentIndex = 0;
+  int _currentIndex = 0;
 
-  void selectProfile(String role, String track) {
+  void selectProfile(String role, String track, String level) {
     selectedRole = role;
     selectedTrack = track;
+    selectedLevel = level;
     notifyListeners();
   }
 
-  
-
   Future<List<String>> loadPracticePrompts() async {
     try {
-       final prompts = await apiService.fetchPracticePrompts(
+      final prompts = await apiService.fetchPracticePrompts(
         role: selectedRole ?? 'candidate',
+        level: selectedLevel ?? 'Intermediate',
         track: selectedTrack ?? 'technical',
         count: 10,
       );
 
-    return prompts;
+      return prompts;
     } catch (error) {
       errorMessage = error.toString();
       rethrow;
-    } 
+    }
   }
 
   Future<void> loadHistory() async {
@@ -66,8 +67,6 @@ int _currentIndex = 0;
       _setLoading(false);
     }
   }
-
-
 
   void clearError() {
     errorMessage = null;

@@ -56,6 +56,12 @@ This project demonstrates a clear architectural separation between:
    flutter run
    ```
 
+4. Add your Google API key to .env:
+   ```bash
+   cp .env.example .env
+   ```
+   Then edit the `.env` file and replace `GEMINI_API_KEY` with your actual Google API key. You may also choose a different model using `GEMINI_MODEL`, although this is an optional variable.
+
 ### Project Structure
 
 ```
