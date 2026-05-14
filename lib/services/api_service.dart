@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 
 class QuestionScore {
   final int clarity;
@@ -42,17 +43,114 @@ class EvaluationResult {
 }
 
 class ApiService {
+  String _env(String key) => (dotenv.env[key] ?? '').trim();
+
+  String _envOr(String key, String fallback) {
+    final value = _env(key);
+    return value.isEmpty ? fallback : value;
+  }
+
+  String get _geminiKey => _env('GEMINI_API_KEY');
+
+  String get _groqKey => _env('GROQ_API_KEY');
+
+  String get _geminiModel => _envOr('GEMINI_MODEL', 'gemini-2.5-flash');
+
+  String get _groqModel => _envOr('GROQ_MODEL', 'openai/gpt-oss-120b');
+
+  Future<String> _generateGemini(String prompt) async {
+    final model = GenerativeModel(
+      model: _geminiModel,
+      apiKey: _geminiKey,
+    );
+
+    final response = await model.generateContent([Content.text(prompt)]);
+    final text = response.text?.trim();
+
+    if (text == null || text.isEmpty) {
+      throw ApiException('Empty Gemini response');
+    }
+
+    return text;
+  }
+
+  Future<String> _generateGroq(String prompt) async {
+    final response = await http.post(
+      Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_groqKey',
+      },
+      body: jsonEncode({
+        'model': _groqModel,
+        'messages': [
+          {'role': 'user', 'content': prompt},
+        ],
+      }),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(
+        'Groq request failed (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final choices = data['choices'] as List<dynamic>?;
+    if (choices == null || choices.isEmpty) {
+      throw ApiException('Groq response missing choices');
+    }
+
+    final message = (choices.first as Map<String, dynamic>)['message'] as Map?;
+    final content = message?['content'] as String?;
+    final text = content?.trim() ?? '';
+    if (text.isEmpty) {
+      throw ApiException('Groq response empty content');
+    }
+
+    return text;
+  }
+
+  Future<String> _generateText(String prompt) async {
+    final hasGemini = _geminiKey.isNotEmpty;
+    final hasGroq = _groqKey.isNotEmpty;
+
+    if (!hasGemini && !hasGroq) {
+      throw ApiException('Missing GEMINI_API_KEY and GROQ_API_KEY');
+    }
+
+    if (hasGemini) {
+      try {
+        return await _generateGemini(prompt);
+      } catch (e) {
+        if (hasGroq) {
+          return await _generateGroq(prompt);
+        }
+        throw ApiException('Gemini request failed: $e');
+      }
+    }
+
+    return _generateGroq(prompt);
+  }
+
+  EvaluationResult _parseEvaluationResult(String jsonText) {
+    try {
+      final jsonArray = jsonDecode(jsonText) as List<dynamic>;
+      final scores = jsonArray
+          .map((item) => QuestionScore.fromJson(item as Map<String, dynamic>))
+          .toList();
+      return EvaluationResult(scores: scores);
+    } catch (e) {
+      throw ApiException('Failed to parse evaluation response: $e');
+    }
+  }
+
   Future<List<String>> fetchPracticePrompts({
     required String role,
     required String track,
     required String level,
     required int count,
   }) async {
-    final model = GenerativeModel(
-      model: dotenv.env['GEMINI_MODEL'] ?? 'gemini-2.5-flash',
-      apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
-    );
-
     final prompt = '''
 Generate $count ${track.toLowerCase()} interview questions for a $role at $level.
 
@@ -65,13 +163,9 @@ Rules:
 - Return each question on a new line
 ''';
 
-    final response = await model.generateContent([Content.text(prompt)]);
+    final responseText = await _generateText(prompt);
 
-    if (response.text == null) {
-      throw Exception('Empty response');
-    }
-
-    return response.text!
+    return responseText
         .trim()
         .split('\n')
         .where((q) => q.trim().isNotEmpty)
@@ -87,10 +181,13 @@ Rules:
       throw ApiException('Prompts and answers length mismatch');
     }
 
-    final model = GenerativeModel(
-      model: dotenv.env['GEMINI_MODEL'] ?? 'gemini-2.5-flash',
-      apiKey: dotenv.env['GEMINI_API_KEY'] ?? '',
-    );
+    final hasGemini = _geminiKey.isNotEmpty;
+    final hasGroq = _groqKey.isNotEmpty;
+
+    if (!hasGemini && !hasGroq) {
+      throw ApiException(
+          'Missing GEMINI_API_KEY and GROQ_API_KEY. Please set at least one in your .env file.');
+    }
 
     final qaText = prompts.asMap().entries.map((entry) {
       return 'Q${entry.key + 1}: ${entry.value}\nA${entry.key + 1}: ${answers[entry.key]}';
@@ -106,32 +203,19 @@ Example format:
 [{"clarity": 8, "accuracy": 7, "clarityReasoning": "Answer was clear and well-structured.", "accuracyReasoning": "Demonstrated solid domain knowledge."}, {"clarity": 6, "accuracy": 5, "clarityReasoning": "Some unclear points.", "accuracyReasoning": "Missing some key concepts."}]
 ''';
 
-    final response =
-        await model.generateContent([Content.text(evaluationPrompt)]);
-
-    if (response.text == null) {
-      throw ApiException('Empty evaluation response');
+    if (hasGemini) {
+      try {
+        final jsonText = await _generateGemini(evaluationPrompt);
+        return _parseEvaluationResult(jsonText);
+      } catch (e) {
+        if (!hasGroq) {
+          throw ApiException('Gemini evaluation failed: $e');
+        }
+      }
     }
 
- try {
-  String jsonText = response.text!.trim();
-  
-  // Strip markdown code fences if present
-  if (jsonText.startsWith('```')) {
-    jsonText = jsonText
-        .replaceAll(RegExp(r'^```(?:json)?\s*', multiLine: false), '')
-        .replaceAll(RegExp(r'\s*```$', multiLine: false), '')
-        .trim();
-  }
-  
-  final jsonArray = jsonDecode(jsonText) as List<dynamic>;
-  final scores = jsonArray
-      .map((item) => QuestionScore.fromJson(item as Map<String, dynamic>))
-      .toList();
-  return EvaluationResult(scores: scores);
-} catch (e) {
-  throw ApiException('Failed to parse evaluation response: $e');
-}
+    final jsonText = await _generateGroq(evaluationPrompt);
+    return _parseEvaluationResult(jsonText);
   }
 }
 

@@ -62,6 +62,8 @@ This project demonstrates a clear architectural separation between:
    ```
    Then edit the `.env` file and replace `GEMINI_API_KEY` with your actual Google API key. You may also choose a different model using `GEMINI_MODEL`, although this is an optional variable.
 
+5. (Optional) Repeat the last step for the fallback model by setting `GROQ_API_KEY` and `GROQ_MODEL` in the `.env` file.
+
 ### Project Structure
 
 ```
