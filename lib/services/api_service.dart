@@ -113,16 +113,25 @@ Example format:
       throw ApiException('Empty evaluation response');
     }
 
-    try {
-      final jsonText = response.text!.trim();
-      final jsonArray = jsonDecode(jsonText) as List<dynamic>;
-      final scores = jsonArray
-          .map((item) => QuestionScore.fromJson(item as Map<String, dynamic>))
-          .toList();
-      return EvaluationResult(scores: scores);
-    } catch (e) {
-      throw ApiException('Failed to parse evaluation response: $e');
-    }
+ try {
+  String jsonText = response.text!.trim();
+  
+  // Strip markdown code fences if present
+  if (jsonText.startsWith('```')) {
+    jsonText = jsonText
+        .replaceAll(RegExp(r'^```(?:json)?\s*', multiLine: false), '')
+        .replaceAll(RegExp(r'\s*```$', multiLine: false), '')
+        .trim();
+  }
+  
+  final jsonArray = jsonDecode(jsonText) as List<dynamic>;
+  final scores = jsonArray
+      .map((item) => QuestionScore.fromJson(item as Map<String, dynamic>))
+      .toList();
+  return EvaluationResult(scores: scores);
+} catch (e) {
+  throw ApiException('Failed to parse evaluation response: $e');
+}
   }
 }
 

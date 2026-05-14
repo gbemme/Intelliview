@@ -33,7 +33,7 @@ class AppState extends ChangeNotifier {
         role: selectedRole ?? 'candidate',
         level: selectedLevel ?? 'Intermediate',
         track: selectedTrack ?? 'technical',
-        count: 10,
+        count: 3,
       );
 
       return prompts;
