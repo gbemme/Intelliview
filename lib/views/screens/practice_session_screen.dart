@@ -19,7 +19,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
     with TickerProviderStateMixin {
   // ── Services & repos ───────────────────────────────────────────────────────
   final SpeechService _speechService = SpeechService();
-  final _transcriptController = TextEditingController();
+  // final _transcriptController = TextEditingController();
   final _sessionRepo = ActiveSessionRepository();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
     _pulseController.dispose();
     _questionSlideController.dispose();
     _timerController.dispose();
-    _transcriptController.dispose();
+    // _transcriptController.dispose();
     super.dispose();
   }
 
@@ -149,7 +149,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
           _answers = saved.answers;
           _currentIndex = saved.currentIndex;
           _interviewStartedAt = saved.questionStartedAt;
-          _transcriptController.text = _answers[_currentIndex];
+          // _transcriptController.text = _answers[_currentIndex];
         });
         _startTimer();
         return;
@@ -174,7 +174,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
       await _speechService.startListening(onResult: (text) {
         setState(() {
           _answers[_currentIndex] = text;
-          _transcriptController.text = text;
+          // _transcriptController.text = text;
         });
       });
       await _saveSession();
@@ -210,10 +210,12 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
 
     if (_currentIndex < _prompts.length - 1) {
       _stopTimer();
-      _animateQuestion(() {
-        _currentIndex++;
-        _transcriptController.text = _answers[_currentIndex];
-      });
+    _animateQuestion(() {
+      _currentIndex++;
+      // final nextAnswer = _answers[_currentIndex];
+      // _transcriptController.clear();            
+      // _transcriptController.text = nextAnswer;  
+    });
       _startTimer();
       _saveSession();
     }
@@ -435,7 +437,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
                                   const SizedBox(height: 16),
                                   // Answer field
                                   _AnswerField(
-                                    controller: _transcriptController,
+                                    answer: _answers.isNotEmpty ? _answers[_currentIndex] : '',
                                     isRecording: _isRecording,
                                   ),
                                   const SizedBox(height: 120),
@@ -699,16 +701,14 @@ class _QuestionCard extends StatelessWidget {
 }
 
 class _AnswerField extends StatelessWidget {
-  final TextEditingController controller;
+  final String answer;
   final bool isRecording;
   const _AnswerField({
-    required this.controller,
+    required this.answer,
     required this.isRecording,
   });
 
   static const Color _surface = Color(0xFF1A1829);
-  static const Color _card = Color(0xFF211F35);
-  static const Color _accent = Color(0xFF6C63FF);
   static const Color _accentAlt = Color(0xFFFF6584);
   static const Color _border = Color(0xFF2E2C45);
   static const Color _textPrimary = Color(0xFFF4F3FF);
@@ -718,6 +718,7 @@ class _AnswerField extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
+      constraints: const BoxConstraints(minHeight: 120),
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(20),
@@ -726,65 +727,48 @@ class _AnswerField extends StatelessWidget {
           width: isRecording ? 1.5 : 1,
         ),
         boxShadow: isRecording
-            ? [
-                BoxShadow(
-                  color: _accentAlt.withOpacity(0.08),
-                  blurRadius: 20,
-                  spreadRadius: 2,
-                )
-              ]
+            ? [BoxShadow(color: _accentAlt.withOpacity(0.08), blurRadius: 20, spreadRadius: 2)]
             : [],
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Row(
-              children: [
-                Icon(
-                  isRecording
-                      ? Icons.fiber_manual_record_rounded
-                      : Icons.edit_rounded,
-                  size: 13,
+          Row(
+            children: [
+              Icon(
+                isRecording ? Icons.fiber_manual_record_rounded : Icons.edit_rounded,
+                size: 13,
+                color: isRecording ? _accentAlt : _textMuted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isRecording ? 'Listening...' : 'Your answer',
+                style: TextStyle(
                   color: isRecording ? _accentAlt : _textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  isRecording ? 'Listening...' : 'Your answer',
-                  style: TextStyle(
-                    color: isRecording ? _accentAlt : _textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          answer.isEmpty
+              ? Text(
+                  isRecording
+                      ? 'Listening — speak your answer...'
+                      : 'Tap the mic below to record your answer',
+                  style: const TextStyle(color: _textMuted, fontSize: 13),
+                )
+              : Text(
+                  answer,
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 14,
+                    height: 1.6,
                   ),
                 ),
-              ],
-            ),
-          ),
-          // Text input
-          TextField(
-            controller: controller,
-            readOnly: true,
-            enableInteractiveSelection: false,
-            showCursor: false,
-            maxLines: 6,
-            minLines: 4,
-            style: const TextStyle(
-              color: _textPrimary,
-              fontSize: 14,
-              height: 1.6,
-            ),
-            decoration: InputDecoration(
-              hintText: isRecording
-                  ? 'Listening — speak your answer...'
-                  : 'Tap the mic below to record your answer',
-              hintStyle: const TextStyle(color: _textMuted, fontSize: 13),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            ),
-          ),
         ],
       ),
     );
