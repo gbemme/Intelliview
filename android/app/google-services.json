@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "78402258292",
+    "project_id": "intelliview-fd426",
+    "storage_bucket": "intelliview-fd426.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:78402258292:android:5541a49a21d957ad211821",
+        "android_client_info": {
+          "package_name": "com.example.intelliview"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXzt50NeiZREP2L7kkKpNW84iuyvhgg-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
