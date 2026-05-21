@@ -34,6 +34,9 @@ migrate_working_dir/
 /coverage/
 .env
 
+# Firebase — contains API keys, regenerate locally with: flutterfire configure
+lib/firebase_options.dart
+
 # Symbolication related
 app.*.symbols
 

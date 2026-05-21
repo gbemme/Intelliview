@@ -7,6 +7,8 @@ import '../../services/speech_service.dart';
 import '../../state/app_state.dart';
 import '../../repositories/active_session_repository.dart';
 import '../../models/active_session.dart';
+import '../../repositories/pending_session_repository.dart';
+import '../../services/api_service.dart';
 
 class PracticeSessionScreen extends StatefulWidget {
   const PracticeSessionScreen({super.key});
@@ -21,6 +23,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
   final SpeechService _speechService = SpeechService();
   // final _transcriptController = TextEditingController();
   final _sessionRepo = ActiveSessionRepository();
+  final _pendingSessionRepo = PendingSessionRepository();
 
   // ── State ──────────────────────────────────────────────────────────────────
   bool _isReady = false;
@@ -141,21 +144,24 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
   }
 
   Future<void> _loadPrompts() async {
+    setState(() => _error = null);
     try {
       final saved = await _sessionRepo.load();
       if (saved != null) {
+        if (!mounted) return;
         setState(() {
           _prompts = saved.prompts;
           _answers = saved.answers;
           _currentIndex = saved.currentIndex;
           _interviewStartedAt = saved.questionStartedAt;
-          // _transcriptController.text = _answers[_currentIndex];
         });
         _startTimer();
         return;
       }
+      if (!mounted) return;
       final state = context.read<AppState>();
       final prompts = await state.loadPracticePrompts();
+      if (!mounted) return;
       setState(() {
         _prompts = prompts;
         _answers = List.filled(prompts.length, '');
@@ -163,7 +169,8 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
       });
       _startTimer();
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      setState(() => _error = friendlyMessageForError(e));
     }
   }
 
@@ -210,12 +217,10 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
 
     if (_currentIndex < _prompts.length - 1) {
       _stopTimer();
-    _animateQuestion(() {
-      _currentIndex++;
-      // final nextAnswer = _answers[_currentIndex];
-      // _transcriptController.clear();            
-      // _transcriptController.text = nextAnswer;  
-    });
+      _animateQuestion(() {
+        _currentIndex++;
+        _answers[_currentIndex] = '';
+      });
       _startTimer();
       _saveSession();
     }
@@ -314,8 +319,11 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
       questionResponses: questionResponses,
     );
 
-    Navigator.pushNamed(context, AppRoutes.summary, arguments: session);
-    _sessionRepo.clear();
+    _pendingSessionRepo.save(session).then((_) {
+      if (!mounted) return;
+      Navigator.pushNamed(context, AppRoutes.summary, arguments: session);
+      _sessionRepo.clear();
+    });
   }
 
   void _showSnack(String msg) {
@@ -394,7 +402,7 @@ class _PracticeSessionScreenState extends State<PracticeSessionScreen>
 
           SafeArea(
             child: _error != null
-                ? _ErrorView(message: _error!)
+                ? _ErrorView(message: _error!, onRetry: _loadPrompts)
                 : _prompts.isEmpty
                     ? const _LoadingView()
                     : Column(
@@ -1013,7 +1021,8 @@ class _LoadingView extends StatelessWidget {
 
 class _ErrorView extends StatelessWidget {
   final String message;
-  const _ErrorView({required this.message});
+  final VoidCallback? onRetry;
+  const _ErrorView({required this.message, this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -1027,23 +1036,55 @@ class _ErrorView extends StatelessWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(
-                color: const Color(0xFFFF6584).withOpacity(0.12),
+                color: const Color(0xFFFF6584).withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.error_outline_rounded,
                   color: Color(0xFFFF6584), size: 28),
             ),
             const SizedBox(height: 16),
-            const Text('Something went wrong',
-                style: TextStyle(
-                    color: Color(0xFFF4F3FF),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700)),
+            const Text(
+              'Something went wrong',
+              style: TextStyle(
+                  color: Color(0xFFF4F3FF),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 8),
-            Text(message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: Color(0xFF9896B0), fontSize: 13, height: 1.5)),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Color(0xFF9896B0), fontSize: 13, height: 1.5),
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 24),
+              GestureDetector(
+                onTap: onRetry,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6C63FF),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.refresh_rounded, color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Try Again',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

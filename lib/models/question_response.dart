@@ -17,19 +17,23 @@ class QuestionResponse {
     this.accuracyReasoning,
   });
 
-  factory QuestionResponse.fromJson(Map<String, dynamic> json) {
+  // --- MÉTODOS PARA FIREBASE (FIRESTORE) ---
+  
+  factory QuestionResponse.fromMap(Map<String, dynamic> map) {
     return QuestionResponse(
-      prompt: json['prompt'] as String,
-      answer: json['answer'] as String,
-      durationSeconds: json['durationSeconds'] as int,
-      clarityScore: json['clarityScore'] as int?,
-      accuracyScore: json['accuracyScore'] as int?,
-      clarityReasoning: json['clarityReasoning'] as String?,
-      accuracyReasoning: json['accuracyReasoning'] as String?,
+      // Flexibilidade para ler tanto 'prompt' quanto 'question'
+      prompt: map['prompt'] ?? map['question'] ?? '',
+      answer: map['answer'] ?? '',
+      // Conversão segura de num para int (essencial para Web/Chrome)
+      durationSeconds: (map['durationSeconds'] as num? ?? 0).toInt(),
+      clarityScore: map['clarityScore'] != null ? (map['clarityScore'] as num).toInt() : null,
+      accuracyScore: map['accuracyScore'] != null ? (map['accuracyScore'] as num).toInt() : null,
+      clarityReasoning: map['clarityReasoning'] as String?,
+      accuracyReasoning: map['accuracyReasoning'] as String?,
     );
   }
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {
       'prompt': prompt,
       'answer': answer,
@@ -39,5 +43,15 @@ class QuestionResponse {
       'clarityReasoning': clarityReasoning,
       'accuracyReasoning': accuracyReasoning,
     };
+  }
+
+  // --- MÉTODOS PARA JSON LOCAL (SHARED PREFERENCES) ---
+
+  factory QuestionResponse.fromJson(Map<String, dynamic> json) {
+    return QuestionResponse.fromMap(json);
+  }
+
+  Map<String, dynamic> toJson() {
+    return toMap();
   }
 }

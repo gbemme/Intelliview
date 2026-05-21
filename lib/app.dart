@@ -23,7 +23,30 @@ class IntelliViewApp extends StatelessWidget {
         title: 'IntelliView',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+          brightness: Brightness.dark,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6C63FF),
+            brightness: Brightness.dark,
+          ).copyWith(
+            surface: const Color(0xFF1A1829),
+            onSurface: const Color(0xFFF4F3FF),
+          ),
+          scaffoldBackgroundColor: const Color(0xFF0F0E17),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1A1829),
+            foregroundColor: Color(0xFFF4F3FF),
+            elevation: 0,
+            titleTextStyle: TextStyle(
+              color: Color(0xFFF4F3FF),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          cardColor: const Color(0xFF211F35),
+          dialogTheme: const DialogThemeData(
+            backgroundColor: Color(0xFF1A1829),
+          ),
+          dividerColor: const Color(0xFF2E2C45),
           useMaterial3: true,
         ),
         initialRoute: AppRoutes.onboarding,

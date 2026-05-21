@@ -18,8 +18,8 @@ class QuestionScore {
 
   factory QuestionScore.fromJson(Map<String, dynamic> json) {
     return QuestionScore(
-      clarity: json['clarity'] as int? ?? 5,
-      accuracy: json['accuracy'] as int? ?? 5,
+      clarity: (json['clarity'] as num? ?? 5).toInt(),
+      accuracy: (json['accuracy'] as num? ?? 5).toInt(),
       clarityReasoning:
           json['clarityReasoning'] as String? ?? 'No reasoning provided.',
       accuracyReasoning:
@@ -33,13 +33,15 @@ class EvaluationResult {
 
   EvaluationResult({required this.scores});
 
-  int get averageClarity =>
-      (scores.fold<int>(0, (sum, s) => sum + s.clarity) / scores.length)
-          .round();
+  int get averageClarity {
+    if (scores.isEmpty) return 0;
+    return (scores.fold<int>(0, (sum, s) => sum + s.clarity) / scores.length).round();
+  }
 
-  int get averageAccuracy =>
-      (scores.fold<int>(0, (sum, s) => sum + s.accuracy) / scores.length)
-          .round();
+  int get averageAccuracy {
+    if (scores.isEmpty) return 0;
+    return (scores.fold<int>(0, (sum, s) => sum + s.accuracy) / scores.length).round();
+  }
 }
 
 class ApiService {
@@ -54,9 +56,14 @@ class ApiService {
 
   String get _groqKey => _env('GROQ_API_KEY');
 
-  String get _geminiModel => _envOr('GEMINI_MODEL', 'gemini-2.5-flash');
+  String get _geminiModel => _envOr('GEMINI_MODEL', 'gemini-3.5-flash');
 
   String get _groqModel => _envOr('GROQ_MODEL', 'openai/gpt-oss-120b');
+
+  /// Gera conteúdo limpando qualquer formatação do Markdown (Usado externamente se necessário)
+  Future<String> generateContent(String prompt) async {
+    return _generateText(prompt);
+  }
 
   Future<String> _generateGemini(String prompt) async {
     final model = GenerativeModel(
@@ -111,26 +118,44 @@ class ApiService {
     return text;
   }
 
+  /// Gerenciador centralizado de chamadas com Fallback e Limpeza de Resposta automática
   Future<String> _generateText(String prompt) async {
     final hasGemini = _geminiKey.isNotEmpty;
     final hasGroq = _groqKey.isNotEmpty;
 
     if (!hasGemini && !hasGroq) {
-      throw ApiException('Missing GEMINI_API_KEY and GROQ_API_KEY');
+      throw ApiException('Missing GEMINI_API_KEY and GROQ_API_KEY. Please set at least one in your .env file.');
     }
+
+    String rawResult = '';
 
     if (hasGemini) {
       try {
-        return await _generateGemini(prompt);
+        rawResult = await _generateGemini(prompt);
       } catch (e) {
         if (hasGroq) {
-          return await _generateGroq(prompt);
+          rawResult = await _generateGroq(prompt);
+        } else {
+          throw ApiException('Gemini request failed: $e');
         }
-        throw ApiException('Gemini request failed: $e');
       }
+    } else {
+      rawResult = await _generateGroq(prompt);
     }
 
-    return _generateGroq(prompt);
+    return _cleanJsonResponse(rawResult);
+  }
+
+  /// Remove cabeçalhos de bloco de código (```json ... ```) de forma limpa
+  String _cleanJsonResponse(String rawResponse) {
+    String cleaned = rawResponse.trim();
+    
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replaceFirst(RegExp(r'^```(json)?\s*'), '');
+      cleaned = cleaned.replaceFirst(RegExp(r'\s*```$'), '');
+    }
+    
+    return cleaned.trim();
   }
 
   EvaluationResult _parseEvaluationResult(String jsonText) {
@@ -181,14 +206,6 @@ Rules:
       throw ApiException('Prompts and answers length mismatch');
     }
 
-    final hasGemini = _geminiKey.isNotEmpty;
-    final hasGroq = _groqKey.isNotEmpty;
-
-    if (!hasGemini && !hasGroq) {
-      throw ApiException(
-          'Missing GEMINI_API_KEY and GROQ_API_KEY. Please set at least one in your .env file.');
-    }
-
     final qaText = prompts.asMap().entries.map((entry) {
       return 'Q${entry.key + 1}: ${entry.value}\nA${entry.key + 1}: ${answers[entry.key]}';
     }).join('\n\n');
@@ -203,18 +220,8 @@ Example format:
 [{"clarity": 8, "accuracy": 7, "clarityReasoning": "Answer was clear and well-structured.", "accuracyReasoning": "Demonstrated solid domain knowledge."}, {"clarity": 6, "accuracy": 5, "clarityReasoning": "Some unclear points.", "accuracyReasoning": "Missing some key concepts."}]
 ''';
 
-    if (hasGemini) {
-      try {
-        final jsonText = await _generateGemini(evaluationPrompt);
-        return _parseEvaluationResult(jsonText);
-      } catch (e) {
-        if (!hasGroq) {
-          throw ApiException('Gemini evaluation failed: $e');
-        }
-      }
-    }
-
-    final jsonText = await _generateGroq(evaluationPrompt);
+    // Chama o gerador centralizado que já garante tratamento de fallback e limpeza do JSON
+    final jsonText = await _generateText(evaluationPrompt);
     return _parseEvaluationResult(jsonText);
   }
 }
@@ -225,4 +232,42 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException: $message';
+}
+
+String friendlyMessageForError(Object e) {
+  final raw = e is ApiException ? e.message : e.toString();
+  final msg = raw.toLowerCase();
+
+  if (msg.contains('missing') && msg.contains('api_key')) {
+    return 'AI service is not configured. Please check your API keys.';
+  }
+  if (msg.contains('401') || msg.contains('unauthorized') || msg.contains('invalid api key')) {
+    return 'Invalid API key. Please check your configuration.';
+  }
+  if (msg.contains('429') || msg.contains('rate limit') || msg.contains('too many requests')) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  if (msg.contains('503') || msg.contains('service unavailable') || msg.contains('overloaded')) {
+    return 'The AI service is overloaded right now. Please wait a moment and try again.';
+  }
+  if (msg.contains('500') || msg.contains('502')) {
+    return 'The AI service encountered an internal error. Please try again later.';
+  }
+  if (msg.contains('empty') && (msg.contains('response') || msg.contains('content'))) {
+    return 'The AI returned no response. Please try again.';
+  }
+  if (msg.contains('parse') || msg.contains('failed to parse')) {
+    return 'Could not process the AI response. Please try again.';
+  }
+  if (msg.contains('socketexception') || msg.contains('failed host lookup') ||
+      msg.contains('connection refused') || msg.contains('network is unreachable')) {
+    return 'Network error. Please check your internet connection and try again.';
+  }
+  if (msg.contains('timeout') || msg.contains('timed out')) {
+    return 'The request timed out. Please check your connection and try again.';
+  }
+  if (msg.contains('length mismatch') || msg.contains('no question responses')) {
+    return 'Session data is incomplete. Please start a new session.';
+  }
+  return 'Something went wrong. Please try again.';
 }

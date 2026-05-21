@@ -16,6 +16,8 @@ dependencies:
   speech_to_text: ^7.3.0
   google_generative_ai: ^0.4.7
   flutter_dotenv: ^6.0.1
+  firebase_core: ^4.9.0
+  cloud_firestore: ^6.4.1
 
 dev_dependencies:
   flutter_test:
