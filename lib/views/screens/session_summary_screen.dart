@@ -56,6 +56,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         throw Exception('No question responses available');
       }
 
+      // 1. Solicita a avaliação do Gemini (que agora já limpa as crases de markdown!)
       final evaluation = await apiService.evaluateSession(
         prompts: prompts,
         answers: answers,
@@ -63,6 +64,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
 
       final pace = _calculatePace(_session.questionResponses ?? []);
 
+      // 2. Mapeia as avaliações individuais por pergunta
       final updatedQuestionResponses =
           (_session.questionResponses ?? []).asMap().entries.map((entry) {
         final index = entry.key;
@@ -80,6 +82,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         );
       }).toList();
 
+      // 3. Monta o objeto final avaliado
       final evaluatedSession = InterviewSession(
         id: _session.id,
         role: _session.role,
@@ -92,11 +95,19 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         questionResponses: updatedQuestionResponses,
       );
 
+      // --- O PASSO CRUCIAL DE SALVAMENTO NO FIRESTORE ---
+      if (mounted) {
+        print("💾 Enviando sessão avaliada para o Firestore...");
+        final appState = Provider.of<AppState>(context, listen: false);
+        await appState.addSessionToHistory(evaluatedSession);
+      }
+
       setState(() {
         _evaluatedSession = evaluatedSession;
         _isEvaluating = false;
       });
     } catch (e) {
+      print("❌ Erro durante o fluxo de avaliação/salvamento: $e");
       setState(() {
         _error = e.toString();
         _isEvaluating = false;
@@ -169,7 +180,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       ),
       body: Stack(
         children: [
-          // Decorative blobs
           Positioned(
             top: -80,
             right: -60,
@@ -668,48 +678,6 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
           },
         );
       },
-    );
-  }
-
-  Widget _buildMetricTile(String label, int score) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: _card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _border),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: _textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _accent.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '$score / 10',
-                style: const TextStyle(
-                  color: _accent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

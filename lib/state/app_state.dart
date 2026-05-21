@@ -35,7 +35,6 @@ class AppState extends ChangeNotifier {
         track: selectedTrack ?? 'technical',
         count: 3,
       );
-
       return prompts;
     } catch (error) {
       errorMessage = error.toString();
@@ -43,23 +42,37 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Escuta as atualizações do Firestore em tempo real
+  /// Corrigido para usar suas variáveis 'history' e 'isLoading'
   Future<void> loadHistory() async {
     _setLoading(true);
+
     try {
-      history = await historyRepository.loadHistory();
-      errorMessage = null;
-    } catch (error) {
-      errorMessage = error.toString();
-    } finally {
+      historyRepository.getSessionsStream().listen((updatedSessions) {
+        history = updatedSessions; 
+        isLoading = false;          
+        notifyListeners();          
+        print("🎉 Histórico atualizado! Total: ${history.length} sessões.");
+      }, onError: (error) {
+        print("❌ Erro no Stream do Firestore: $error");
+        _setLoading(false);
+      });
+    } catch (e) {
+      print("❌ Erro ao carregar histórico: $e");
       _setLoading(false);
     }
   }
 
+  /// Adiciona sessão no histórico (Remoto e Local)
   Future<void> addSessionToHistory(InterviewSession session) async {
     _setLoading(true);
     try {
       await historyRepository.saveSession(session);
-      history.insert(0, session);
+      // O stream em loadHistory() já vai atualizar a lista automaticamente, 
+      // mas mantemos a inserção local para resposta imediata na UI
+      if (!history.any((s) => s.id == session.id)) {
+        history.insert(0, session);
+      }
       errorMessage = null;
     } catch (error) {
       errorMessage = error.toString();
@@ -73,8 +86,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// MÉTODO ÚNICO: Resolvendo o erro de duplicidade (duplicate_definition)
   void _setLoading(bool value) {
-    isLoading = value;
-    notifyListeners();
+    if (isLoading != value) {
+      isLoading = value;
+      notifyListeners();
+    }
   }
 }

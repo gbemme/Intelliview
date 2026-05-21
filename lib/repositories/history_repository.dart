@@ -9,20 +9,17 @@ class HistoryRepository {
   final CollectionReference _sessionCollection = 
       FirebaseFirestore.instance.collection('sessions');
 
-  // ID fixo para desenvolvimento (já que removemos o Login)
+  // ID fixo para desenvolvimento (conforme o seu código original)
   final String _localUserId = "local_developer_user";
 
-  /// Carrega o histórico completo do Firebase
+  /// Carrega o histórico completo (Busca única via Future)
   Future<List<InterviewSession>> loadHistory() async {
     try {
-      // Buscamos todos os documentos. 
-      // Se quiser filtrar por usuário no futuro, use: .where('userId', isEqualTo: _localUserId)
       QuerySnapshot querySnapshot = await _sessionCollection
           .orderBy('createdAt', descending: true)
           .get();
 
       return querySnapshot.docs.map((doc) {
-        // Usamos o fromFirestore que criamos para mapear o ID e os dados
         return InterviewSession.fromFirestore(
           doc.data() as Map<String, dynamic>, 
           doc.id,
@@ -30,27 +27,53 @@ class HistoryRepository {
       }).toList();
     } catch (e) {
       print("Erro ao carregar histórico do Firebase: $e");
-      // Retorna lista vazia para não quebrar o App em caso de erro de rede
       return [];
     }
+  }
+
+  /// Retorna um Stream em tempo real da coleção 'sessions'
+  /// Isso resolve o erro de "method getSessionsStream isn't defined"
+  Stream<List<InterviewSession>> getSessionsStream() {
+    print("🛰️ Ligando escuta em tempo real com Firestore...");
+    return _sessionCollection
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          return snapshot.docs.map((doc) {
+            try {
+              return InterviewSession.fromFirestore(
+                doc.data() as Map<String, dynamic>, 
+                doc.id,
+              );
+            } catch (e) {
+              print("❌ Erro ao converter documento ${doc.id}: $e");
+              return InterviewSession(
+                id: doc.id,
+                role: 'Erro de conversão',
+                track: '',
+                transcript: '',
+                clarity: 0,
+                pace: 0,
+                accuracy: 0,
+                createdAt: DateTime.now(),
+              );
+            }
+          }).toList();
+        });
   }
 
   /// Salva uma nova sessão no Firebase
   Future<void> saveSession(InterviewSession session) async {
     try {
-      // Converte o modelo para Map
       final Map<String, dynamic> sessionData = session.toFirestore();
       
-      // Adiciona o userId fixo para manter a organização
       sessionData['userId'] = _localUserId;
-
-      // Se o campo createdAt não existir no modelo, garantimos que ele vá com a hora atual
       sessionData['createdAt'] ??= FieldValue.serverTimestamp();
 
       await _sessionCollection.add(sessionData);
-      print("Sessão salva com sucesso no Firestore!");
+      print("✅ Sessão salva com sucesso no Firestore!");
     } catch (e) {
-      print("Erro ao salvar sessão no Firebase: $e");
+      print("❌ Erro ao salvar sessão: $e");
       throw Exception("Falha ao salvar sessão: $e");
     }
   }

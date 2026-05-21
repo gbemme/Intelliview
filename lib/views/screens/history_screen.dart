@@ -13,8 +13,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<AppState>().loadHistory();
-  }
+    
+    // Agora fechando corretamente a função
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final appState = Provider.of<AppState>(context, listen: false);
+        appState.loadHistory();
+      }
+    });
+  } // <--- Esta chave estava faltando!
 
   @override
   Widget build(BuildContext context) {
@@ -37,8 +44,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: ListTile(
                           title: Text('${session.role} • ${session.track}'),
-                          subtitle: Text('Clarity ${session.clarity}, Pace ${session.pace}, Accuracy ${session.accuracy}'),
-                          trailing: Text('${session.createdAt.month}/${session.createdAt.day}/${session.createdAt.year}'),
+                          subtitle: Text('Clarity: ${session.clarity} | Pace: ${session.pace} | Accuracy: ${session.accuracy}'),
+                          trailing: Text('${session.createdAt.day}/${session.createdAt.month}/${session.createdAt.year}'),
                         ),
                       );
                     },
