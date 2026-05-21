@@ -56,7 +56,7 @@ class ApiService {
 
   String get _groqKey => _env('GROQ_API_KEY');
 
-  String get _geminiModel => _envOr('GEMINI_MODEL', 'gemini-1.5-flash');
+  String get _geminiModel => _envOr('GEMINI_MODEL', 'gemini-3.5-flash');
 
   String get _groqModel => _envOr('GROQ_MODEL', 'openai/gpt-oss-120b');
 
@@ -232,4 +232,42 @@ class ApiException implements Exception {
 
   @override
   String toString() => 'ApiException: $message';
+}
+
+String friendlyMessageForError(Object e) {
+  final raw = e is ApiException ? e.message : e.toString();
+  final msg = raw.toLowerCase();
+
+  if (msg.contains('missing') && msg.contains('api_key')) {
+    return 'AI service is not configured. Please check your API keys.';
+  }
+  if (msg.contains('401') || msg.contains('unauthorized') || msg.contains('invalid api key')) {
+    return 'Invalid API key. Please check your configuration.';
+  }
+  if (msg.contains('429') || msg.contains('rate limit') || msg.contains('too many requests')) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  if (msg.contains('503') || msg.contains('service unavailable') || msg.contains('overloaded')) {
+    return 'The AI service is overloaded right now. Please wait a moment and try again.';
+  }
+  if (msg.contains('500') || msg.contains('502')) {
+    return 'The AI service encountered an internal error. Please try again later.';
+  }
+  if (msg.contains('empty') && (msg.contains('response') || msg.contains('content'))) {
+    return 'The AI returned no response. Please try again.';
+  }
+  if (msg.contains('parse') || msg.contains('failed to parse')) {
+    return 'Could not process the AI response. Please try again.';
+  }
+  if (msg.contains('socketexception') || msg.contains('failed host lookup') ||
+      msg.contains('connection refused') || msg.contains('network is unreachable')) {
+    return 'Network error. Please check your internet connection and try again.';
+  }
+  if (msg.contains('timeout') || msg.contains('timed out')) {
+    return 'The request timed out. Please check your connection and try again.';
+  }
+  if (msg.contains('length mismatch') || msg.contains('no question responses')) {
+    return 'Session data is incomplete. Please start a new session.';
+  }
+  return 'Something went wrong. Please try again.';
 }

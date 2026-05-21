@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../models/interview_session.dart';
 import '../../models/question_response.dart';
 import '../../routes.dart';
+import '../../repositories/pending_session_repository.dart';
 import '../../services/api_service.dart';
 import '../../state/app_state.dart';
 import '../widgets/radar_chart.dart';
@@ -15,10 +16,13 @@ class SessionSummaryScreen extends StatefulWidget {
 }
 
 class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
-  late InterviewSession _session;
+  final _pendingRepo = PendingSessionRepository();
+
+  InterviewSession? _session;
   InterviewSession? _evaluatedSession;
   String? _error;
   bool _isEvaluating = false;
+  bool _sessionLoading = true;
 
   static const Color _bg = Color(0xFF0F0E17);
   static const Color _surface = Color(0xFF1A1829);
@@ -30,15 +34,42 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   static const Color _border = Color(0xFF2E2C45);
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _session = ModalRoute.of(context)!.settings.arguments as InterviewSession;
-    if (_evaluatedSession == null && !_isEvaluating) {
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initSession());
+  }
+
+  Future<void> _initSession() async {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is InterviewSession) {
+      await _pendingRepo.save(args);
+      if (!mounted) return;
+      setState(() {
+        _session = args;
+        _sessionLoading = false;
+      });
+    } else {
+      final saved = await _pendingRepo.load();
+      if (!mounted) return;
+      if (saved == null) {
+        Navigator.pushNamedAndRemoveUntil(
+            context, AppRoutes.onboarding, (r) => false);
+        return;
+      }
+      setState(() {
+        _session = saved;
+        _sessionLoading = false;
+      });
+    }
+    if (mounted && _evaluatedSession == null && !_isEvaluating) {
       _evaluateSession();
     }
   }
 
   Future<void> _evaluateSession() async {
+    final session = _session;
+    if (session == null) return;
+
     setState(() {
       _isEvaluating = true;
       _error = null;
@@ -48,25 +79,23 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
       final apiService = ApiService();
 
       final prompts =
-          _session.questionResponses?.map((qr) => qr.prompt).toList() ?? [];
+          session.questionResponses?.map((qr) => qr.prompt).toList() ?? [];
       final answers =
-          _session.questionResponses?.map((qr) => qr.answer).toList() ?? [];
+          session.questionResponses?.map((qr) => qr.answer).toList() ?? [];
 
       if (prompts.isEmpty || answers.isEmpty) {
         throw Exception('No question responses available');
       }
 
-      // 1. Solicita a avaliação do Gemini (que agora já limpa as crases de markdown!)
       final evaluation = await apiService.evaluateSession(
         prompts: prompts,
         answers: answers,
       );
 
-      final pace = _calculatePace(_session.questionResponses ?? []);
+      final pace = _calculatePace(session.questionResponses ?? []);
 
-      // 2. Mapeia as avaliações individuais por pergunta
       final updatedQuestionResponses =
-          (_session.questionResponses ?? []).asMap().entries.map((entry) {
+          (session.questionResponses ?? []).asMap().entries.map((entry) {
         final index = entry.key;
         final qr = entry.value;
         final score =
@@ -82,16 +111,15 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         );
       }).toList();
 
-      // 3. Monta o objeto final avaliado
       final evaluatedSession = InterviewSession(
-        id: _session.id,
-        role: _session.role,
-        track: _session.track,
-        transcript: _session.transcript,
+        id: session.id,
+        role: session.role,
+        track: session.track,
+        transcript: session.transcript,
         clarity: evaluation.averageClarity,
         pace: pace,
         accuracy: evaluation.averageAccuracy,
-        createdAt: _session.createdAt,
+        createdAt: session.createdAt,
         questionResponses: updatedQuestionResponses,
       );
 
@@ -107,9 +135,8 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         _isEvaluating = false;
       });
     } catch (e) {
-      print("❌ Erro durante o fluxo de avaliação/salvamento: $e");
       setState(() {
-        _error = e.toString();
+        _error = friendlyMessageForError(e);
         _isEvaluating = false;
       });
     }
@@ -139,12 +166,23 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
   }
 
   Future<void> _tryAgain() async {
+    await _pendingRepo.clear();
+    if (!mounted) return;
     Navigator.pushReplacementNamed(context, AppRoutes.practice);
   }
 
   @override
   Widget build(BuildContext context) {
-    final displaySession = _evaluatedSession ?? _session;
+    if (_sessionLoading) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+        ),
+      );
+    }
+
+    final displaySession = _evaluatedSession ?? _session!;
     final isReady = _evaluatedSession != null;
 
     return Scaffold(
@@ -162,11 +200,15 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
         ),
         centerTitle: false,
         leading: GestureDetector(
-          onTap: () => Navigator.pushNamedAndRemoveUntil(
-            context,
-            AppRoutes.onboarding,
-            (route) => false,
-          ),
+          onTap: () async {
+            final nav = Navigator.of(context);
+            await _pendingRepo.clear();
+            if (!mounted) return;
+            nav.pushNamedAndRemoveUntil(
+              AppRoutes.onboarding,
+              (route) => false,
+            );
+          },
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -233,7 +275,7 @@ class _SessionSummaryScreenState extends State<SessionSummaryScreen> {
                                   size: 56, color: _accentAlt),
                               const SizedBox(height: 16),
                               Text(
-                                'Evaluation Error',
+                                'Could not evaluate session',
                                 style: const TextStyle(
                                   color: _textPrimary,
                                   fontSize: 18,

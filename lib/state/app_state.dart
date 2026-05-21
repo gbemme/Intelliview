@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/interview_session.dart';
 import '../repositories/history_repository.dart';
@@ -19,6 +20,7 @@ class AppState extends ChangeNotifier {
   String? submittedSessionId;
   List<String> _answers = [];
   int _currentIndex = 0;
+  StreamSubscription<List<InterviewSession>>? _historySubscription;
 
   void selectProfile(String role, String track, String level) {
     selectedRole = role;
@@ -37,30 +39,29 @@ class AppState extends ChangeNotifier {
       );
       return prompts;
     } catch (error) {
-      errorMessage = error.toString();
+      errorMessage = friendlyMessageForError(error);
       rethrow;
     }
   }
 
-  /// Escuta as atualizações do Firestore em tempo real
-  /// Corrigido para usar suas variáveis 'history' e 'isLoading'
   Future<void> loadHistory() async {
+    await _historySubscription?.cancel();
+
+    errorMessage = null;
     _setLoading(true);
 
-    try {
-      historyRepository.getSessionsStream().listen((updatedSessions) {
-        history = updatedSessions; 
-        isLoading = false;          
-        notifyListeners();          
-        print("🎉 Histórico atualizado! Total: ${history.length} sessões.");
-      }, onError: (error) {
-        print("❌ Erro no Stream do Firestore: $error");
+    _historySubscription = historyRepository.getSessionsStream().listen(
+      (updatedSessions) {
+        history = updatedSessions;
+        errorMessage = null;
+        isLoading = false;
+        notifyListeners();
+      },
+      onError: (error) {
+        errorMessage = 'Could not load history. Please try again.';
         _setLoading(false);
-      });
-    } catch (e) {
-      print("❌ Erro ao carregar histórico: $e");
-      _setLoading(false);
-    }
+      },
+    );
   }
 
   /// Adiciona sessão no histórico (Remoto e Local)
@@ -75,7 +76,7 @@ class AppState extends ChangeNotifier {
       }
       errorMessage = null;
     } catch (error) {
-      errorMessage = error.toString();
+      errorMessage = 'Could not save session. Your results may not have been recorded.';
     } finally {
       _setLoading(false);
     }
